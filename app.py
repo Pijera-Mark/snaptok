@@ -1,6 +1,4 @@
 import os
-import re
-import json
 import requests
 from flask import Flask, render_template, request, jsonify, redirect, Response, stream_with_context
 
@@ -33,74 +31,55 @@ def get_video_info():
     except Exception as e:
         print(f"URL expansion error: {e}")
 
-    # Native Python TikTok Extractor (Works reliably on Render & Local)
-    video_url = None
-    title = "TikTok Video"
-    author = "TikTok Creator"
-    thumbnail = ""
-
+    # Use official TikWM POST API (Extremely reliable for all TikTok links)
     try:
+        api_url = "https://www.tikwm.com/api/"
+        payload = {'url': url, 'hd': 1}
         headers = {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Origin': 'https://www.tikwm.com',
+            'Referer': 'https://www.tikwm.com/'
         }
-        resp = requests.get(url, headers=headers, timeout=10)
-        html = resp.text
+        response = requests.post(api_url, data=payload, headers=headers, timeout=12)
+        if response.status_code == 200:
+            res_data = response.json()
+            if res_data.get('code') == 0:
+                vid_data = res_data['data']
+                original_hd_url = vid_data.get('hdplay') or vid_data.get('play')
+                music_url = vid_data.get('music')
 
-        # Parse SIGI_STATE JSON embedded in TikTok page
-        sigi_match = re.search(r'<script id="SIGI_STATE" type="application/json">(.*?)</script>', html)
-        if sigi_match:
-            try:
-                sigi_data = json.loads(sigi_match.group(1))
-                item_module = sigi_data.get('ItemModule', {})
-                for k, v in item_module.items():
-                    title = v.get('desc', title)
-                    author = v.get('author', author)
-                    thumbnail = v.get('video', {}).get('cover', thumbnail)
-                    play_addr = v.get('video', {}).get('playAddr') or v.get('video', {}).get('downloadAddr')
-                    if play_addr:
-                        video_url = play_addr
-                        break
-            except Exception as e:
-                print(f"SIGI parse error: {e}")
+                if not original_hd_url:
+                    return jsonify({'error': 'Video stream not found in response.'}), 400
+
+                formats = [{
+                    'quality': 'Original HD',
+                    'label': '⭐ Original HD (Max Quality / No Watermark)',
+                    'url': original_hd_url
+                }]
+                if music_url:
+                    formats.append({
+                        'quality': 'MP3',
+                        'label': 'Original MP3 Audio',
+                        'url': music_url
+                    })
+
+                return jsonify({
+                    'title': vid_data.get('title', 'TikTok Video'),
+                    'uploader': vid_data.get('author', {}).get('nickname', 'TikTok Creator'),
+                    'thumbnail': vid_data.get('cover', ''),
+                    'duration': f"00:{vid_data.get('duration', 10):02d}",
+                    'platform': 'tiktok',
+                    'formats': formats
+                })
+            else:
+                err_msg = res_data.get('msg', 'Unknown extractor error')
+                return jsonify({'error': f'Failed to extract video: {err_msg}. Please ensure the link is public.'}), 400
+        else:
+            return jsonify({'error': f'API connection error (HTTP {response.status_code}).'}), 400
 
     except Exception as e:
-        print(f"Native extraction error: {e}")
-
-    # Fallback to TikWM API if native extraction didn't catch the stream
-    if not video_url:
-        try:
-            api_url = f"https://www.tikwm.com/api/?url={url}&hd=1"
-            api_resp = requests.get(api_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': 'https://www.tikwm.com/'}, timeout=8)
-            if api_resp.status_code == 200:
-                api_json = api_resp.json()
-                if api_json.get('code') == 0:
-                    v_data = api_json['data']
-                    video_url = v_data.get('hdplay') or v_data.get('play')
-                    title = v_data.get('title', title)
-                    author = v_data.get('author', {}).get('nickname', author)
-                    thumbnail = v_data.get('cover', thumbnail)
-        except Exception as e:
-            print(f"TikWM fallback error: {e}")
-
-    if not video_url:
-        return jsonify({'error': 'Could not extract video stream. Please ensure the TikTok link is public and correct.'}), 400
-
-    return jsonify({
-        'title': title,
-        'uploader': author,
-        'thumbnail': thumbnail or 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-        'duration': '00:30',
-        'platform': 'tiktok',
-        'formats': [
-            {
-                'quality': 'Original HD',
-                'label': '⭐ Original HD (Max Quality / No Watermark)',
-                'url': video_url
-            }
-        ]
-    })
+        return jsonify({'error': f'Extraction error: {str(e)}'}), 500
 
 @app.route('/api/download', methods=['GET'])
 def download_video():
@@ -110,7 +89,7 @@ def download_video():
 
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Referer': 'https://www.tiktok.com/'
         }
         r = requests.get(download_url, headers=headers, stream=True, timeout=30)
@@ -118,11 +97,13 @@ def download_video():
         if r.status_code != 200:
             return redirect(download_url)
 
+        ext = 'mp3' if 'music' in download_url or 'audio' in download_url else 'mp4'
+
         return Response(
             stream_with_context(r.iter_content(chunk_size=1024*1024)),
-            content_type='video/mp4',
+            content_type=r.headers.get('content-type', 'video/mp4'),
             headers={
-                'Content-Disposition': 'attachment; filename="TikTok_Original_HD.mp4"'
+                'Content-Disposition': f'attachment; filename="TikTok_Video.{ext}"'
             }
         )
     except Exception as e:
