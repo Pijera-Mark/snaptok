@@ -22,7 +22,7 @@ def get_video_info():
     if 'tiktok.com' not in url.lower():
         return jsonify({'error': 'Please enter a valid TikTok URL.'}), 400
 
-    # Method 1: Cobalt API (Extremely reliable free media extractor)
+    # Method 1: Cobalt API with proper Origin & Referer headers
     try:
         cobalt_url = "https://co.wuk.sh/api/json"
         payload = {
@@ -33,7 +33,9 @@ def get_video_info():
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "Origin": "https://co.wuk.sh",
+            "Referer": "https://co.wuk.sh/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         }
         res = requests.post(cobalt_url, json=payload, headers=headers, timeout=12)
         if res.status_code == 200:
@@ -57,12 +59,13 @@ def get_video_info():
     except Exception as e:
         print(f"Cobalt API error: {e}")
 
-    # Method 2: TikWM API Fallback
+    # Method 2: TikWM API Fallback with proper headers
     try:
         api_url = f"https://www.tikwm.com/api/?url={url}&hd=1"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://www.tikwm.com/'
         }
         response = requests.get(api_url, headers=headers, timeout=10)
         if response.status_code == 200:
