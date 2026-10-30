@@ -31,7 +31,7 @@ def get_video_info():
     except Exception as e:
         print(f"URL expansion error: {e}")
 
-    # Use official TikWM POST API (Extremely reliable for all TikTok links)
+    # Use official TikWM POST API
     try:
         api_url = "https://www.tikwm.com/api/"
         payload = {'url': url, 'hd': 1}
@@ -46,6 +46,36 @@ def get_video_info():
             res_data = response.json()
             if res_data.get('code') == 0:
                 vid_data = res_data['data']
+
+                # Handle TikTok Photo Slideshows
+                images = vid_data.get('images', [])
+                if images:
+                    formats = []
+                    for idx, img_url in enumerate(images):
+                        formats.append({
+                            'quality': f'Photo {idx+1}',
+                            'label': f'🖼️ Download Slide {idx+1} (HD)',
+                            'url': img_url
+                        })
+
+                    music_url = vid_data.get('music')
+                    if music_url:
+                        formats.append({
+                            'quality': 'MP3',
+                            'label': 'Original MP3 Audio',
+                            'url': music_url
+                        })
+
+                    return jsonify({
+                        'title': vid_data.get('title', 'TikTok Photo Slideshow'),
+                        'uploader': vid_data.get('author', {}).get('nickname', 'TikTok Creator'),
+                        'thumbnail': images[0],
+                        'duration': '00:10',
+                        'platform': 'tiktok',
+                        'formats': formats
+                    })
+
+                # Handle Standard Video
                 original_hd_url = vid_data.get('hdplay') or vid_data.get('play')
                 music_url = vid_data.get('music')
 
@@ -74,7 +104,7 @@ def get_video_info():
                 })
             else:
                 err_msg = res_data.get('msg', 'Unknown extractor error')
-                return jsonify({'error': f'Failed to extract video: {err_msg}. Please ensure the link is public.'}), 400
+                return jsonify({'error': f'Failed to extract: {err_msg}. Note: Private or deleted TikTok videos cannot be downloaded.'}), 400
         else:
             return jsonify({'error': f'API connection error (HTTP {response.status_code}).'}), 400
 
@@ -97,13 +127,13 @@ def download_video():
         if r.status_code != 200:
             return redirect(download_url)
 
-        ext = 'mp3' if 'music' in download_url or 'audio' in download_url else 'mp4'
+        ext = 'jpg' if 'jpg' in download_url or 'jpeg' in download_url else ('mp3' if 'music' in download_url or 'audio' in download_url else 'mp4')
 
         return Response(
             stream_with_context(r.iter_content(chunk_size=1024*1024)),
             content_type=r.headers.get('content-type', 'video/mp4'),
             headers={
-                'Content-Disposition': f'attachment; filename="TikTok_Video.{ext}"'
+                'Content-Disposition': f'attachment; filename="TikTok_Download.{ext}"'
             }
         )
     except Exception as e:
