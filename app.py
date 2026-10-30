@@ -1,6 +1,6 @@
 import os
 import requests
-from flask import Flask, render_template, request, jsonify, redirect, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify, redirect
 
 app = Flask(__name__)
 
@@ -100,25 +100,7 @@ def download_video():
     download_url = request.args.get('url')
     if not download_url:
         return "Missing download URL", 400
-
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://www.tiktok.com/'
-        }
-        r = requests.get(download_url, headers=headers, stream=True, timeout=30)
-
-        ext = 'mp3' if 'music' in download_url or 'audio' in download_url else 'mp4'
-
-        return Response(
-            stream_with_context(r.iter_content(chunk_size=1024*1024)),
-            content_type=r.headers.get('content-type', 'video/mp4'),
-            headers={
-                'Content-Disposition': f'attachment; filename="TikTok_Original_HD_{os.urandom(3).hex()}.{ext}"'
-            }
-        )
-    except Exception as e:
-        return redirect(download_url)
+    return redirect(download_url)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
