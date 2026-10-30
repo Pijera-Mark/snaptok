@@ -22,6 +22,15 @@ def get_video_info():
     if 'tiktok.com' not in url.lower():
         return jsonify({'error': 'Please enter a valid TikTok URL.'}), 400
 
+    # Expand short TikTok URLs (vm.tiktok.com, vt.tiktok.com)
+    try:
+        if 'vm.tiktok.com' in url or 'vt.tiktok.com' in url:
+            r_redir = requests.get(url, headers={'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)'}, allow_redirects=True, timeout=5)
+            if r_redir.url:
+                url = r_redir.url
+    except Exception as e:
+        print(f"URL expansion error: {e}")
+
     # Method 1: Cobalt API with proper Origin & Referer headers
     try:
         cobalt_url = "https://co.wuk.sh/api/json"
