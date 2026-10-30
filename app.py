@@ -22,14 +22,15 @@ def get_video_info():
     if 'tiktok.com' not in url.lower():
         return jsonify({'error': 'Please enter a valid TikTok URL.'}), 400
 
-    # Fallback 1: TikWM API
+    # Fetch via TikWM API
     try:
         api_url = f"https://www.tikwm.com/api/?url={url}&hd=1"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Referer': 'https://www.tikwm.com/'
         }
-        response = requests.get(api_url, headers=headers, timeout=10)
+        response = requests.get(api_url, headers=headers, timeout=12)
         if response.status_code == 200:
             res_data = response.json()
             if res_data.get('code') == 0:
@@ -37,6 +38,9 @@ def get_video_info():
                 original_hd_url = vid_data.get('hdplay') or vid_data.get('play')
                 sd_url = vid_data.get('play')
                 music_url = vid_data.get('music')
+
+                if not original_hd_url:
+                    return jsonify({'error': 'Video stream not found in response.'}), 400
 
                 return jsonify({
                     'title': vid_data.get('title', 'TikTok Video'),
@@ -62,38 +66,14 @@ def get_video_info():
                         }
                     ]
                 })
+            else:
+                err_msg = res_data.get('msg', 'Unknown error from TikTok extractor.')
+                return jsonify({'error': f'Failed to fetch video: {err_msg}. Please ensure the link is public and complete.'}), 400
+        else:
+            return jsonify({'error': f'API connection error (HTTP {response.status_code}).'}), 400
+
     except Exception as e:
-        print(f"TikWM API error: {e}")
-
-    # Fallback 2: TikTok oEmbed API
-    try:
-        oembed_url = f"https://www.tiktok.com/oembed?url={url}"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        response = requests.get(oembed_url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            oembed_data = response.json()
-            title = oembed_data.get('title', 'TikTok Video')
-            author = oembed_data.get('author_name', 'TikTok Creator')
-            thumbnail = oembed_data.get('thumbnail_url', '')
-
-            return jsonify({
-                'title': title,
-                'uploader': author,
-                'thumbnail': thumbnail,
-                'duration': '00:30',
-                'platform': 'tiktok',
-                'formats': [
-                    {
-                        'quality': 'Original HD',
-                        'label': '⭐ Original HD (Max Quality / No Watermark)',
-                        'url': url
-                    }
-                ]
-            })
-    except Exception as e:
-        print(f"oEmbed error: {e}")
-
-    return jsonify({'error': 'Failed to fetch TikTok video. Please check the URL and ensure the video is public.'}), 500
+        return jsonify({'error': f'Extraction error: {str(e)}'}), 500
 
 @app.route('/api/download', methods=['GET'])
 def download_video():
@@ -103,8 +83,8 @@ def download_video():
 
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://www.tikwm.com/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Referer': 'https://www.tiktok.com/'
         }
         r = requests.get(download_url, headers=headers, stream=True, timeout=30)
 
