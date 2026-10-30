@@ -1,6 +1,7 @@
 import os
 import requests
 from flask import Flask, render_template, request, jsonify, redirect, Response, stream_with_context
+import yt_dlp
 
 app = Flask(__name__)
 
@@ -31,85 +32,90 @@ def get_video_info():
     except Exception as e:
         print(f"URL expansion error: {e}")
 
-    # Use official TikWM POST API
+    # Fallback 1: Cobalt API
+    try:
+        cobalt_url = "https://co.wuk.sh/api/json"
+        payload = {"url": url, "vQuality": "max", "isAudioOnly": False}
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Origin": "https://co.wuk.sh",
+            "Referer": "https://co.wuk.sh/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        res = requests.post(cobalt_url, json=payload, headers=headers, timeout=8)
+        if res.status_code == 200:
+            c_data = res.json()
+            if c_data.get('status') in ['stream', 'redirect'] and c_data.get('url'):
+                return jsonify({
+                    'title': 'TikTok Video (HD No Watermark)',
+                    'uploader': 'TikTok Creator',
+                    'thumbnail': 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
+                    'duration': '00:30',
+                    'platform': 'tiktok',
+                    'formats': [{
+                        'quality': 'Original HD',
+                        'label': '⭐ Original HD (Max Quality / No Watermark)',
+                        'url': c_data.get('url')
+                    }]
+                })
+    except Exception as e:
+        print(f"Cobalt error: {e}")
+
+    # Fallback 2: TikWM API
     try:
         api_url = "https://www.tikwm.com/api/"
         payload = {'url': url, 'hd': 1}
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             'Accept': 'application/json',
-            'Origin': 'https://www.tikwm.com',
             'Referer': 'https://www.tikwm.com/'
         }
-        response = requests.post(api_url, data=payload, headers=headers, timeout=12)
+        response = requests.post(api_url, data=payload, headers=headers, timeout=8)
         if response.status_code == 200:
             res_data = response.json()
             if res_data.get('code') == 0:
                 vid_data = res_data['data']
-
-                # Handle TikTok Photo Slideshows
-                images = vid_data.get('images', [])
-                if images:
-                    formats = []
-                    for idx, img_url in enumerate(images):
-                        formats.append({
-                            'quality': f'Photo {idx+1}',
-                            'label': f'🖼️ Download Slide {idx+1} (HD)',
-                            'url': img_url
-                        })
-
-                    music_url = vid_data.get('music')
-                    if music_url:
-                        formats.append({
-                            'quality': 'MP3',
-                            'label': 'Original MP3 Audio',
-                            'url': music_url
-                        })
-
+                hd_url = vid_data.get('hdplay') or vid_data.get('play')
+                if hd_url:
                     return jsonify({
-                        'title': vid_data.get('title', 'TikTok Photo Slideshow'),
+                        'title': vid_data.get('title', 'TikTok Video'),
                         'uploader': vid_data.get('author', {}).get('nickname', 'TikTok Creator'),
-                        'thumbnail': images[0],
-                        'duration': '00:10',
+                        'thumbnail': vid_data.get('cover', ''),
+                        'duration': '00:30',
                         'platform': 'tiktok',
-                        'formats': formats
+                        'formats': [{
+                            'quality': 'Original HD',
+                            'label': '⭐ Original HD (Max Quality / No Watermark)',
+                            'url': hd_url
+                        }]
                     })
-
-                # Handle Standard Video
-                original_hd_url = vid_data.get('hdplay') or vid_data.get('play')
-                music_url = vid_data.get('music')
-
-                if not original_hd_url:
-                    return jsonify({'error': 'Video stream not found in response.'}), 400
-
-                formats = [{
-                    'quality': 'Original HD',
-                    'label': '⭐ Original HD (Max Quality / No Watermark)',
-                    'url': original_hd_url
-                }]
-                if music_url:
-                    formats.append({
-                        'quality': 'MP3',
-                        'label': 'Original MP3 Audio',
-                        'url': music_url
-                    })
-
-                return jsonify({
-                    'title': vid_data.get('title', 'TikTok Video'),
-                    'uploader': vid_data.get('author', {}).get('nickname', 'TikTok Creator'),
-                    'thumbnail': vid_data.get('cover', ''),
-                    'duration': f"00:{vid_data.get('duration', 10):02d}",
-                    'platform': 'tiktok',
-                    'formats': formats
-                })
-            else:
-                err_msg = res_data.get('msg', 'Unknown extractor error')
-                return jsonify({'error': f'Failed to extract: {err_msg}. Note: Private or deleted TikTok videos cannot be downloaded.'}), 400
-        else:
-            return jsonify({'error': f'API connection error (HTTP {response.status_code}).'}), 400
-
     except Exception as e:
-        return jsonify({'error': f'Extraction error: {str(e)}'}), 500
+        print(f"TikWM error: {e}")
+
+    # Fallback 3: yt-dlp Python Library
+    try:
+        ydl_opts = {'no_warnings': True, 'skip_download': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            video_url = info.get('url')
+            if video_url:
+                return jsonify({
+                    'title': info.get('title', 'TikTok Video'),
+                    'uploader': info.get('uploader', 'TikTok Creator'),
+                    'thumbnail': info.get('thumbnail', ''),
+                    'duration': '00:30',
+                    'platform': 'tiktok',
+                    'formats': [{
+                        'quality': 'Original HD',
+                        'label': '⭐ Original HD (Max Quality / No Watermark)',
+                        'url': video_url
+                    }]
+                })
+    except Exception as e:
+        print(f"yt-dlp error: {e}")
+
+    return jsonify({'error': 'API connection error (HTTP 403). All extraction services are temporarily blocked or restricted for this link.'}), 400
 
 @app.route('/api/download', methods=['GET'])
 def download_video():
@@ -127,13 +133,11 @@ def download_video():
         if r.status_code != 200:
             return redirect(download_url)
 
-        ext = 'jpg' if 'jpg' in download_url or 'jpeg' in download_url else ('mp3' if 'music' in download_url or 'audio' in download_url else 'mp4')
-
         return Response(
             stream_with_context(r.iter_content(chunk_size=1024*1024)),
-            content_type=r.headers.get('content-type', 'video/mp4'),
+            content_type='video/mp4',
             headers={
-                'Content-Disposition': f'attachment; filename="TikTok_Download.{ext}"'
+                'Content-Disposition': 'attachment; filename="TikTok_Original_HD.mp4"'
             }
         )
     except Exception as e:
